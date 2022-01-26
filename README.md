@@ -22,3 +22,10 @@ You can run commands for inspecting inputted data such as:
 
 # --help
 Prints manual
+
+
+# Start
+clone repository
+chmod +x handle.sh
+requirements: parallel-ssh sshpass openssl ssh ssh-copy-id
+./handle.sh --help 
