@@ -158,11 +158,12 @@ then
 
     printf "\n\nRun ssh-keygen for new keys.\nThis may take a long time...\n\n"
 
-    while IFS=, read -r pass port vps dum
+    while IFS=',' read -r pass port vps dum
     do
         echo $vps
+        echo $dum > /dev/null
         export SSHPASS=$pass
-        sshpass -e ssh-copy-id -i ~/.ssh/id_rsa.pub -o StrictHostKeyChecking=no $vps || echo "FAILED" &
+        sshpass -e ssh-copy-id -p $port -i ~/.ssh/id_rsa.pub -o StrictHostKeyChecking=no $vps || echo "FAILED" && ssh $vps 'rm -rf .ssh' && sshpass -e ssh-copy-id -p $port -i ~/.ssh/id_rsa.pub -o StrictHostKeyChecking=no $vps || echo "FAILED" &
     done < $datap
 
     while true
