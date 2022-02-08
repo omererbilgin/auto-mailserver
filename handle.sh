@@ -2,9 +2,9 @@
 
 
 #data path | columns: pass, port, user@host, domain
-datap="core.csv"
+datap="core.txt"
 #host path
-hostp=".hosts"
+hostp="hosts.txt"
 setup="setup.sh"
 
 hostc=$(cat $hostp | wc -l)
@@ -55,13 +55,19 @@ fi
 if [[ "$1" == "--run" ]]
 then
     parallel-ssh -t 0 -h $hostp -- chmod +x $setup
-    parallel-ssh -t 0 -h $hostp -- $setup
+    parallel-ssh -t 0 -i -h $hostp -- ./$setup
 fi
 
 #quick update
 if [[ "$1" == "-q" || "$1" == "--update" ]]
 then
     parallel-ssh -t 0 -h $hostp -- apt update
+fi
+
+
+if [[ "$1" == "-r" || "$1" == "--reboot" ]]
+then
+    parallel-ssh -h $hostp -- reboot
 fi
 
 #data check
@@ -154,7 +160,7 @@ then
     
     #only tested ubuntu 20.04
     #to modify ssh-copy-id to accept StrictHostKeyChecking just like in ssh
-    sudo sed -i.bak 's/ssh \$/ssh -o StrictHostKeyChecking=no \$/' $(which ssh-copy-id)
+    #sudo sed -i.bak 's/ssh \$/ssh -o StrictHostKeyChecking=no \$/' $(which ssh-copy-id)
 
     printf "\n\nRun ssh-keygen for new keys.\nThis may take a long time...\n\n"
 
@@ -227,32 +233,84 @@ then
     exit
 fi
 
+if [[ "$1" == "--user-create" ]]
+then
+
+    user="$2"
+    pass="$3"
+    if [[ "$user" == "" || "$pass" == "" ]]
+    then
+        echo "Please enter non-empty USER or PASSWORD"
+        exit
+    fi
+    parallel-ssh -i -h $hostp "useradd -m -G mail -s /bin/bash $user"
+    parallel-ssh -i -h $hostp "echo -e -n \"$pass\n$pass\" | passwd $user"
+fi
+
+if [[ "$1" == "--full-keys" ]]
+then
+    
+    printf "\nEnter an ID number of one of the following:\n\n"
+    echo *dns_key
+    printf "\n\nKey: "
+    read fname
+
+    cat ${fname}_dns_key/* >> $fname.txt
+
+    printf "\n\nLoaded keys into: $fname.txt\n"
+
+fi
+
+#enables some necessary restrictions for sending/recieving mails
+#ufw is not case sensitive
+if [[ "$1" == "--firewall-allow" || "$1" == "-fa" ]]
+then
+    parallel-ssh -h $hostp "ufw allow 'Nginx Full' && ufw allow http && ufw allow https && ufw allow 'postfix submission' && ufw allow 'postfix smtps' && ufw allow 'dovecot imap' && ufw allow 'dovecot secure imap'"
+    parallel-ssh -i -h $hostp "ufw status"
+fi
+
+if [[ "$1" == "--firewall-dis" || "$1" == "-fd" ]]
+then
+    parallel-ssh -h $hostp "ufw allow 'Nginx Full' && ufw allow http && ufw allow https && ufw allow 'postfix submission' && ufw allow 'postfix smtps' && ufw allow 'dovecot imap' && ufw allow 'dovecot secure imap'"
+    parallel-ssh -i -h $hostp "ufw status"
+fi
+
+if [[ "$1" == "--firewall-disable" ]]
+then
+    parallel-ssh -i -h $hostp "ufw disable"
+fi
+
 if [[ "$1" == '--data-format' ]]
 then
 
     printf "\n\nDefault File Names: \n\n\n"
-    printf "    .hosts       | Keeps host information\n"
-    printf "    core.csv     | Keeps core information of hosts\n"
-    printf "    setup.sh     | Keeps the script text for installing the webserver and ssl\n"
-    printf "    emailwiz.sh  | Keeps the script text for generating TXT records\n"
+    printf "    .hosts       | Keeps host information (used by parallel-ssh)\n"
+    printf "    core.csv     | Keeps core information of hosts (used while: sending ssh-keys, passing domain_name to specific host, passing domain_name to configure e-mail utilities)\n"
+    printf "    setup.sh     | Keeps the script text for installing the webserver and ssl (to run on each host separately)\n"
+    printf "    emailwiz.sh  | Keeps the script text for generating TXT records, confiuring e-mail utilities, etc.\n"
     printf "\n\nFormat: \n\n\n"
-    printf "    .hosts       | user@ip for each line\n"
+    printf "    .hosts       | user@ip (line by line)\n"
     printf "    core.csv     | CSV columns: password , connection port , user@ip , domain\n\n"
 fi
 
 if [[ "$1" == "-h" || "$1" == "--help" || "$1" == "" ]]
 then
     printf "\n\nAvailable options: \n\n\n"
-    printf "    --ssh-key     | Installs ssh keys to target host(s)\n"
-    printf "    --record-key  | Generates necessary TXT host records\n"
-    printf "    --ssl-check   | Gets ssl information for each host\n"
-    printf "    -q, --update  | Updates servers using apt\n"
-    printf "    --script      | Sends setup script to target host(s)\n"
-    printf "    --prep-check  | Checks host status and information sent to host(s)\n"
-    printf "    --run         | Runs the setup script on each host\n"
-    printf "    --data-check  | Shows human readable data in files\n"
-    printf "    -c, --command | Runs command for all hosts\n"
-    printf "    --show-output | Runs command for all hosts but with output\n"
-    printf "    --data-format | Prints a guide for inputting data\n"
-    printf "    -h, --help    | Prints available options (this page)\n\n"
+    printf "    --ssh-key               | Installs ssh keys to target host(s)\n"
+    printf "    --record-key            | Generates necessary TXT host records\n"
+    printf "    --ssl-check             | Gets ssl information for each host\n"
+    printf "    -q, --update            | Updates servers using apt\n"
+    printf "    -r, --reboot            | Reboots servers using reboot\n"
+    printf "    -fa, --firewall-allow   | Allows certain apps for sending/recieving mails restricted by UFW\n"
+    printf "    -fd, --firewall-dis     | Disallows what is allowed with --firewall-allow\n"
+    printf "    --firewall-disable      | Disables UFW completely\n"
+    printf "    --script                | Sends setup script to target host(s)\n"
+    printf "    --prep-check            | Checks host status and information sent to host(s)\n"
+    printf "    --run                   | Runs the setup script on each host\n"
+    printf "    --user-create           | Takes two parameters: USER{string} PASSWORD{string}. Creates user in every host\n"
+    printf "    --data-check            | Shows human readable data in files\n"
+    printf "    -c, --command           | Runs command for all hosts\n"
+    printf "    --show-output           | Runs command for all hosts but with output\n"
+    printf "    --data-format           | Prints a guide for inputting data\n"
+    printf "    -h, --help              | Prints available options (this page)\n\n"
 fi
